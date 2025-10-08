@@ -1,15 +1,18 @@
-# Use official PHP image
-FROM php:8.2-cli
+# Use official PHP Apache image
+FROM php:8.2-apache
 
 # Set working directory
-WORKDIR /app
+WORKDIR /var/www/html
 
-# Copy all files to container
+# Copy all project files to Apache root
 COPY . .
 
-# Expose Render's dynamic port
-ENV PORT=10000
-EXPOSE $PORT
+# Enable Apache rewrite (optional but useful)
+RUN a2enmod rewrite
 
-# Start PHP built-in server
-CMD php -S 0.0.0.0:$PORT -t .
+# Render uses PORT env variable
+ENV PORT=10000
+EXPOSE 10000
+
+# Start Apache server
+CMD ["apache2-foreground"]
