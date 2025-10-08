@@ -1,134 +1,120 @@
 <?php
-// ===================================================
-// 🔹 BACKEND API SECTION (CORS + Login API)
-// ===================================================
+// ✅ --- UNIVERSAL TELEGRAM BOT BACKEND + API LOGIN HANDLER ---
+// Works perfectly on Render.com
 
-// === CORS FIX (must be at the top, before any output) ===
-header("Access-Control-Allow-Origin: *"); // or replace * with your frontend domain
+// --------------------
+// 1️⃣  BASIC CORS FIX
+// --------------------
+header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization");
-header("Access-Control-Allow-Credentials: true");
 
-// Handle preflight OPTIONS request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
 
-// Handle API route: /?api=login
-if (isset($_GET['api']) && $_GET['api'] === 'login') {
-    header("Content-Type: application/json");
+// --------------------
+// 2️⃣  TELEGRAM BOT CONFIG
+// --------------------
+$apiKey = getenv('BOT_API_KEY') ?: 'YOUR_TELEGRAM_BOT_TOKEN';
+$botUsername = getenv('BOT_USERNAME') ?: 'YOUR_BOT_USERNAME';
+$web_app = getenv('WEB_URL') ?: 'https://your-app.onrender.com';
 
-    // Read POST body
-    $data = json_decode(file_get_contents('php://input'), true);
-    $username = trim($data['username'] ?? '');
-    $password = trim($data['password'] ?? '');
+// --------------------
+// 3️⃣  DATABASE CONFIG
+// --------------------
+$DB = [
+  'dbname' => getenv('DB_NAME') ?: 'your_database',
+  'username' => getenv('DB_USER') ?: 'your_user',
+  'password' => getenv('DB_PASS') ?: 'your_password',
+  'host' => getenv('DB_HOST') ?: 'localhost'
+];
 
-    // ✅ Example login logic (replace with DB check if needed)
-    if ($username === 'admin' && $password === '1234') {
-        echo json_encode([
-            'status' => 'success',
-            'message' => 'Login successful ✅'
-        ]);
-    } else {
-        echo json_encode([
-            'status' => 'error',
-            'message' => 'Invalid username or password ❌'
-        ]);
-    }
+$mysqli = new mysqli($DB['host'], $DB['username'], $DB['password'], $DB['dbname']);
+if ($mysqli->connect_error) {
+    http_response_code(500);
+    echo json_encode(["error" => "Database connection failed"]);
     exit();
 }
+
+// --------------------
+// 4️⃣  SIMPLE ROUTING SYSTEM
+// --------------------
+$uri = trim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/');
+
+// Example route: /api/login
+if ($uri === 'api/login') {
+    handleLogin($mysqli);
+    exit();
+}
+
+// Example route: /bot/message (for Telegram webhook)
+if ($uri === 'bot/message') {
+    handleTelegramUpdate($apiKey, $mysqli);
+    exit();
+}
+
+// Default landing page
+echo json_encode(["status" => "Backend active", "time" => date('Y-m-d H:i:s')]);
+exit();
+
+// --------------------
+// 5️⃣  API: LOGIN HANDLER
+// --------------------
+function handleLogin($mysqli) {
+    $data = json_decode(file_get_contents("php://input"), true);
+    $username = $mysqli->real_escape_string($data['username'] ?? '');
+    $password = $mysqli->real_escape_string($data['password'] ?? '');
+
+    if (empty($username) || empty($password)) {
+        http_response_code(400);
+        echo json_encode(["error" => "Missing username or password"]);
+        return;
+    }
+
+    $result = $mysqli->query("SELECT * FROM users WHERE username='$username' AND password='$password' LIMIT 1");
+    if ($result && $result->num_rows > 0) {
+        $user = $result->fetch_assoc();
+        echo json_encode(["success" => true, "user" => $user]);
+    } else {
+        echo json_encode(["success" => false, "message" => "Invalid credentials"]);
+    }
+}
+
+// --------------------
+// 6️⃣  TELEGRAM BOT HANDLER
+// --------------------
+function handleTelegramUpdate($apiKey, $mysqli) {
+    $update = json_decode(file_get_contents("php://input"), true);
+    if (!$update) return;
+
+    $chat_id = $update['message']['chat']['id'] ?? null;
+    $text = $update['message']['text'] ?? '';
+
+    if (!$chat_id) return;
+
+    // Simple command example
+    if ($text == '/start') {
+        sendTelegramMessage($apiKey, $chat_id, "👋 Welcome to the bot!");
+    } else {
+        sendTelegramMessage($apiKey, $chat_id, "You said: $text");
+    }
+}
+
+function sendTelegramMessage($apiKey, $chat_id, $message) {
+    $url = "https://api.telegram.org/bot$apiKey/sendMessage";
+    $post_fields = [
+        'chat_id' => $chat_id,
+        'text' => $message
+    ];
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $post_fields);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_exec($ch);
+    curl_close($ch);
+}
 ?>
-
-<!-- =================================================== -->
-<!-- 🔹 FRONTEND (HTML + JS) -->
-<!-- =================================================== -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Taptap Login</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f5f6fa;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .box {
-            background: #fff;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            width: 320px;
-            text-align: center;
-        }
-        input {
-            width: 100%;
-            padding: 10px;
-            margin: 8px 0;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-        button {
-            width: 100%;
-            padding: 10px;
-            background: #007bff;
-            border: none;
-            color: white;
-            border-radius: 6px;
-            font-size: 16px;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-        button:hover {
-            background: #0069d9;
-        }
-        #message {
-            margin-top: 10px;
-            font-weight: bold;
-        }
-    </style>
-</head>
-<body>
-    <div class="box">
-        <h2>Taptap Login</h2>
-        <input id="username" type="text" placeholder="Username" />
-        <input id="password" type="password" placeholder="Password" />
-        <button onclick="login()">Login</button>
-        <p id="message"></p>
-    </div>
-
-    <script>
-        async function login() {
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value.trim();
-            const msg = document.getElementById('message');
-
-            msg.innerText = "🔄 Logging in...";
-            msg.style.color = "black";
-
-            try {
-                const res = await fetch(`${window.location.origin}/?api=login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password }),
-                    credentials: 'include' // needed if using cookies/session later
-                });
-
-                const data = await res.json();
-                msg.innerText = data.message;
-                msg.style.color = data.status === "success" ? "green" : "red";
-            } catch (err) {
-                msg.innerText = "⚠️ Network error: " + err.message;
-                msg.style.color = "red";
-            }
-        }
-    </script>
-</body>
-</html>
